@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project name="output_list" basedir="./" default="output_list">
+
+	<target name="output_list">
+		<property name="local.level" value="info" />
+		<property name="local.prefix" value="" />
+
+		<if>
+			<or>
+				<not><isset property="local.list" /></not>
+				<equals arg1="${local.list}" arg2="" />
+			</or>
+			<then><echo level="debug">Nothing to output</echo></then>
+			<else>
+				<php function="str_replace" returnProperty="local.list_formatted">
+					<param value="&#10;" />
+					<param value="|" />
+					<param value="${local.list}" />
+				</php>
+
+				<foreach list="${local.list_formatted}" param="local.line" delimiter="|" target="_output" />
+			</else>
+		</if>
+	</target>
+
+	<target name="_output">
+		<php function="substr" returnProperty="local.line.first_char">
+			<param value="${local.line}" />
+			<param value="0" />
+			<param value="1" />
+		</php>
+
+		<if>
+			<equals arg1="${local.line.first_char}" arg2="!" />
+			<then>
+				<php function="substr" returnProperty="local.line.trimmed">
+					<param value="${local.line}" />
+					<param value="1" />
+				</php>
+
+				<echo level="error">${local.prefix}${local.line.trimmed}</echo>
+			</then>
+			<else><echo level="${local.level}">${local.prefix}${local.line}</echo></else>
+		</if>
+	</target>
+
+</project>
+

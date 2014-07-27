@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project name="build" basedir="./" default="check_syntax">
+
+	<target name="check_syntax">
+		<property name="local.project_path" value="${init.paths.export}/${input.site}/" />
+
+		<echo level="warning">    Checking PHP syntax...</echo>
+		<exec command="echo `find . -name '*.php'` `find . -name '*.tpl'` | xargs -n 1 php -l 2>&amp;1 | grep -v '^No syntax errors detected in .*\....$'" dir="${local.project_path}" outputProperty="local.error" />
+
+		<if>
+			<equals arg1="${local.error}" arg2="" />
+			<then>
+				<echo level="warning">        Passed!</echo>
+			</then>
+			<else>
+				<echo level="error">        Syntax errors were encountered during code verification!</echo>
+
+				<phing phingfile="${init.paths.phing}/_output_list.xml" target="output_list">
+					<property name="local.list" value="${local.error}" />
+					<property name="local.prefix" value="        " />
+					<property name="local.level" value="error" />
+				</phing>
+
+				<echo level="error">        Please correct these issues and deploy again.</echo>
+				<exec command="${init.paths.phing}/_lock.remove.php ${input.site} ${input.target}" />
+				<php level="debug" expression="die(1)" />
+			</else>
+		</if>
+
+	</target>
+
+</project>
+

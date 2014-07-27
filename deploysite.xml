@@ -1,0 +1,232 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project name="deploysite" basedir="./" default="deploysite">
+	<property name="init.paths.phing" value="/home/manuser/webs/script/deploy" />
+	<property file="${init.paths.phing}/_common.properties" />
+	<exec command="whoami" outputProperty="user.name" />
+	<exec command="date +%A" outputProperty="dow" />
+	<property name="init.paths.export" value="/home/${user.name}/.phing_builds/git_exports" />
+	<property name="init.paths.clone" value="/home/${user.name}/.phing_builds/git_clone" />
+	<!-- Move that to a config file -->
+	<property name="path" value="${deploy.path}" />
+	<tstamp>
+        	<format pattern="%Y%H%d%M%m" property="build.time"></format>
+		<format property="main_dep_date" pattern="%c" />
+	</tstamp>
+
+	<!-- CLEANING BLOCK -->
+	<target name="clean_sites">
+		<if>
+			<available file="${init.paths.export}/${input.site}" />
+			<then>
+				<echo level="warning">Cleaning temp directory...</echo>
+				<echo level="info">${init.paths.export}/${input.site}</echo>
+				<delete dir="${init.paths.export}/${input.site}" />
+				<delete dir="${init.paths.clone}/${input.site}" />
+				<delete file="${init.paths.export}/__buildfiles/${buildfile_main}" />
+			</then>
+		</if>
+	</target>
+
+	<!-- PREPERATION BLOCK -->
+	<target name="prepare_site">
+		<echo level="warning">Preparing ${input.site} for deployment...</echo>
+		<echo level="info">Preparing new site build directory ${init.paths.export}/${input.site}...</echo>
+		<delete dir="${init.paths.export}/${input.site}" />
+		<mkdir dir="${init.paths.export}/${input.site}" />
+		<!-- prepare project -->
+		<echo level="warning">Preparing project...</echo>
+		<echo level="info">    Exporting SVN build for ${input.site} from ${git.base}/${input.site}</echo>
+		
+		<exec command="cp -r ${init.paths.clone}/${input.site}/. ${init.paths.export}/${input.site}/; ${git.path} checkout ${main_revision};" />
+		<exec command="cd ${init.paths.export}/${input.site}/;find ./ -name '.git' -exec rm -fr {} +" />
+			
+		<echo level="warning">    Removing PHP comments in project...</echo>
+		<reflexive>
+	        <fileset dir="${init.paths.export}/${input.site}/">
+	            <include pattern="**/*.php" />
+	        </fileset>
+	        <filterchain>
+	            <stripphpcomments />
+	        </filterchain>
+	    </reflexive>
+		<echo level="warning">    Replacing placeholders in project...</echo>
+		<reflexive>
+		    <fileset dir="${init.paths.export}/${input.site}/">
+		        <include pattern="**/*.php" />
+		        <include pattern="**/*.css" />
+		        <include pattern="**/*.js" />
+		    </fileset>
+		    <filterchain>
+		        <replaceregexp>
+		            <regexp pattern="SVN:REVISIONNUMBER" replace="${build.time}" />
+		        </replaceregexp>
+		    </filterchain>
+		</reflexive>
+		<echo level="warning">    Minifying JS and CSS files...</echo>
+		<exec command="${init.paths.phing}/minify.py -a --folder ${init.paths.export}/${input.site}/" />
+		<!--verify syntax-->
+		<phing phingfile="${init.paths.phing}/_deploy.check_syntax.xml" target="check_syntax" />
+		<!--zip it up!-->
+		<echo level="info">    Creating target build archive...</echo>
+		<mkdir dir="${init.paths.export}/__buildfiles" />
+		<exec output="/dev/null" command="tar zcf ${buildfile_main} -C ${init.paths.export}/${input.site}/ ." dir="${init.paths.export}/__buildfiles" />
+		<exec command="echo &quot;LAST DEPLOY~${input.target}~${user.name}~${main_dep_date}~Rev ${input.revision}~${git.base}/${input.site}&quot; &gt; ${init.paths.phing}/last_deploy.log" />
+	</target>
+
+	<!-- DISTRIBUTION BLOCK FOR MAIN PROJECT -->
+	<target name="distribute_site_main">
+		<if>
+                        <equals arg1="${input.target}" arg2="live" />
+                        <then>
+                        	<property name="opcode.base" value="${opcode.live.base}" />
+                        </then>
+                        <else>
+                        	<property name="opcode.base" value="${opcode.stage.base}" />
+                	</else>
+                </if>
+		<trycatch property="deploy.error">
+			<try>
+				<if>
+                        		<equals arg1="${input.deploy_media}" arg2="live" />
+                        		<then>
+                        			<exec command="rsync -rtvuz ${deploy.local.media_folder} ${servers.username}@${local.server}:${deploy.remote.media_folder}" />	
+					</then>
+                		</if>
+				<!-- Copy over the *.tar.gz archive via scp over to each server -->
+				<echo level="warning">Distributing project to ${local.server}...</echo>
+				<exec checkreturn="true" level="debug" command="scp -i /home/${user.name}/.ssh/id_rsa ${init.paths.export}/__buildfiles/${buildfile_main} ${servers.username}@${local.server}:${deploy.path}/" />
+				<!-- Create the temp directory for the new build -->
+				<tstamp><format property="main_dep_date" pattern="%c" /></tstamp>
+				<!-- decompress the archive and switch it with the live copy as quickly as possible -->
+				<echo level="info">Deploying MAIN on ${local.server}...</echo>
+				<exec checkreturn="true" level="debug" command="ssh ${servers.username}@${local.server} '
+						cd ${deploy.path} &amp;&amp;
+						rm -rf ${deploy.folder}_* &amp;&amp;
+						cp -R ${deploy.folder} ${deploy.folder}_old &amp;&amp;
+						mkdir ${deploy.folder}_new &amp;&amp;
+						tar -xzf ${buildfile_main} -C ${deploy.folder}_new &amp;&amp;
+						mv -f ${deploy.folder} ${deploy.folder}_bak &amp;&amp;
+						mv -f ${deploy.folder}_new ${deploy.folder} &amp;&amp;
+						rm -rf ${deploy.folder}_* ${buildfile_main}'" />
+				<http-request url="${opcode.base}${opcode.clear}" authUser="${opcode.auth.user}" authPassword="${opcode.auth.password}" authScheme="${opcode.auth.scheme}"/>
+			</try>
+			<catch>
+				<echo level="info">Encountered error: ${deploy.error}</echo>
+				<echo level="error">Deployment of MAIN to ${local.server} failed, and we were unable to recover. The site is likely broken on this server. Please contact Operations immediately for assistance.</echo>
+				<php level="debug" expression="die(1)" />
+			</catch>
+		</trycatch>
+	</target>
+
+	<!-- DEPLOYMENT BLOCK -->
+	<target name="deploysite">
+		<if>
+			<isset property="input.site" />
+			<then><echo level="error">Deploying site: ${input.site}</echo></then>
+			<else><input propertyName="input.site" promptChar=":">Please enter the domain to deploy</input></else>
+		</if>
+		<echo level="info">Fetching svn commit info...</echo>
+		<property file="${init.paths.phing}/${input.site}.properties" />
+		<trycatch>
+			<try>
+				<mkdir dir="${init.paths.clone}/${input.site}/" />
+                <exec command="${git.path} clone ${git.base}/${input.site} ${init.paths.clone}/${input.site}/" />
+			</try>
+			<catch>
+				<echo level="error">Couldn't access ${input.site} at ${git.base}/${input.site}.</echo>
+				<echo level="error">Did you type the site name correctly?</echo>
+				<php level="debug" expression="die(1)" />
+			</catch>
+		</trycatch>
+		<trycatch>
+			<try>
+				<exec passthru="true" command="cd ${init.paths.clone}/${input.site}/;${git.path} log --graph --pretty=format:'%Cred%H%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(bold blue)&lt;%an&gt;%Creset';echo '\n'" />
+			</try>
+			<catch>
+				<echo level="error">Project does not exist for ${input.site}, or an error was encountered</echo>
+				<property name="input.deploy_gui" value="n" />
+			</catch>
+		</trycatch>
+		<if>
+			<isset property="input.revision" />
+			<then><echo level="error">Deploying revision: ${input.revision}</echo></then>
+			<else><input propertyName="input.revision" promptChar=":">Enter a stable revision # to deploy</input></else>
+		</if>
+		<exec command="cd ${init.paths.clone}/${input.site}/;${git.path} show ${input.revision} | grep commit | cut -d ' ' -f 2 | awk '{print $1; exit}'" outputProperty="actual_revision" />
+		<if>
+			<not><equals arg1="${input.revision}" arg2="${actual_revision}" /></not>
+			<then>
+				<echo level="error">Revision ${input.revision} doesn't seem to exist.</echo>
+				<php level="debug" expression="die(1)" />
+			</then>
+		</if>
+		<if>
+			<or>
+				<equals arg1="${input.target}" arg2="live" />
+				<equals arg1="${input.target}" arg2="stage" />
+			</or>
+			<then><echo level="error">Deploying to location: ${input.target}</echo></then>
+			<else><input propertyName="input.target" validArgs="stage,live" defaultValue="stage" promptChar="?">Deploy to which location </input></else>
+		</if>
+		<if>
+			<equals arg1="${input.deploy_main}" arg2="y" />
+			<then><echo level="error">Will deploy main project</echo></then>
+			<elseif>
+				<not><equals arg1="${input.deploy_main}" arg2="n" /></not>
+				<then><input propertyName="input.deploy_main" validArgs="y,n" defaultValue="n" promptChar="?">Deploy the MAIN project </input></then>
+			</elseif>
+		</if>
+                <if>
+                        <equals arg1="${input.deploy_media}" arg2="y" />
+                        <then><echo level="error">Will sync the media folder</echo></then>
+                        <elseif>
+                                <not><equals arg1="${input.deploy_main}" arg2="n" /></not>
+                                <then><input propertyName="input.deploy_media" validArgs="y,n" defaultValue="n" promptChar="?">Sync the media folder between stage and live </input></then>
+                        </elseif>
+                </if>
+		<if>
+			<and>
+				<equals arg1="${input.deploy_main}" arg2="n" />
+				<equals arg1="${input.deploy_media}" arg2="n" />
+			</and>
+			<then>
+				<echo level="error">Not much point in deploying if you're not going to deploy anything!</echo>
+				<php level="debug" expression="die(1)" />
+			</then>
+		</if>
+		<phingcall target="deploysite_action" />
+	</target>
+
+	<target name="deploysite_action">
+		<echo level="error">Initiating deployment. DO NOT MANUALLY TERMINATE THE PROCESS!</echo>
+		<property name="main_revision" value="${input.revision}" />
+		<!-- log beginning of deployment process -->
+		<echo level="info">Aquiring lock for ${input.site}...</echo>
+		<if>
+			<equals arg1="${input.target}" arg2="live" />
+			<then>
+				<property name="deploy.target" value="${servers.live}" />
+			</then>
+			<else>
+				<property name="deploy.target" value="${servers.stage}" />
+			</else>
+		</if>
+		<property name="buildfile_main" value="${input.site}-main_rev${main_revision}-${input.target}_${DSTAMP}.tar.gz" />
+		<phingcall target="clean_sites" />
+		<phingcall target="prepare_site" />
+		<trycatch property="error.deploy_main">
+			<try>
+				<foreach list="${deploy.target}" param="local.server" target="distribute_site_main" />
+			</try>
+			<catch>
+				<!-- Remove project lock due to this error -->
+				<echo level="info">Releasing lock for ${input.site} due to deployment error...</echo>
+				<php level="debug" expression="die(1)" />
+			</catch>
+		</trycatch>
+		<!-- Now remove the project lock -->
+		<echo level="info">Releasing lock for ${input.site}...</echo>
+		<echo level="warning">The latest revision of ${input.site} is live! Have a beer...</echo>
+		<phingcall target="clean_sites" />
+	</target>
+</project>
