@@ -45,9 +45,6 @@
 	        <fileset dir="${init.paths.export}/${input.site}/">
 	            <include pattern="**/*.php" />
 	        </fileset>
-	        <filterchain>
-	            <stripphpcomments />
-	        </filterchain>
 	    </reflexive>
 		<echo level="warning">    Replacing placeholders in project...</echo>
 		<reflexive>
@@ -87,7 +84,7 @@
 		<trycatch property="deploy.error">
 			<try>
 				<if>
-                        		<equals arg1="${input.deploy_media}" arg2="live" />
+                        		<equals arg1="${input.deploy_media}" arg2="y" />
                         		<then>
                         			<exec command="rsync -rtvuz ${deploy.local.media_folder} ${servers.username}@${local.server}:${deploy.remote.media_folder}" />	
 					</then>
@@ -125,12 +122,13 @@
 			<then><echo level="error">Deploying site: ${input.site}</echo></then>
 			<else><input propertyName="input.site" promptChar=":">Please enter the domain to deploy</input></else>
 		</if>
+		<phingcall target="clean_sites" />
 		<echo level="info">Fetching svn commit info...</echo>
 		<property file="${init.paths.phing}/${input.site}.properties" />
 		<trycatch>
 			<try>
 				<mkdir dir="${init.paths.clone}/${input.site}/" />
-                <exec command="${git.path} clone ${git.base}/${input.site} ${init.paths.clone}/${input.site}/" />
+		                <exec command="${git.path} clone ${git.base}/${input.site} ${init.paths.clone}/${input.site}/" />
 			</try>
 			<catch>
 				<echo level="error">Couldn't access ${input.site} at ${git.base}/${input.site}.</echo>
@@ -140,7 +138,7 @@
 		</trycatch>
 		<trycatch>
 			<try>
-				<exec passthru="true" command="cd ${init.paths.clone}/${input.site}/;${git.path} log --graph --pretty=format:'%Cred%H%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(bold blue)&lt;%an&gt;%Creset';echo '\n'" />
+				<exec passthru="true" command="cd ${init.paths.clone}/${input.site}/;${git.path} log --graph --pretty=format:'%Cred%H%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(bold blue)&lt;%an&gt;%Creset';" />
 			</try>
 			<catch>
 				<echo level="error">Project does not exist for ${input.site}, or an error was encountered</echo>
@@ -180,7 +178,7 @@
                         <equals arg1="${input.deploy_media}" arg2="y" />
                         <then><echo level="error">Will sync the media folder</echo></then>
                         <elseif>
-                                <not><equals arg1="${input.deploy_main}" arg2="n" /></not>
+                                <not><equals arg1="${input.deploy_media}" arg2="n" /></not>
                                 <then><input propertyName="input.deploy_media" validArgs="y,n" defaultValue="n" promptChar="?">Sync the media folder between stage and live </input></then>
                         </elseif>
                 </if>
@@ -229,4 +227,5 @@
 		<echo level="warning">The latest revision of ${input.site} is live! Have a beer...</echo>
 		<phingcall target="clean_sites" />
 	</target>
+
 </project>
