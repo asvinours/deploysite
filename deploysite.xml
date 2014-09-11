@@ -40,12 +40,6 @@
 		<exec command="cp -r ${init.paths.clone}/${input.site}/. ${init.paths.export}/${input.site}/; ${git.path} checkout ${main_revision};" />
 		<exec command="cd ${init.paths.export}/${input.site}/;find ./ -name '.git' -exec rm -fr {} +" />
 			
-		<echo level="warning">    Removing PHP comments in project...</echo>
-		<reflexive>
-	        <fileset dir="${init.paths.export}/${input.site}/">
-	            <include pattern="**/*.php" />
-	        </fileset>
-	    </reflexive>
 		<echo level="warning">    Replacing placeholders in project...</echo>
 		<reflexive>
 		    <fileset dir="${init.paths.export}/${input.site}/">
@@ -59,11 +53,18 @@
 		        </replaceregexp>
 		    </filterchain>
 		</reflexive>
+        <!--verify syntax-->
+        <echo level="warning">    Verifying PHP syntax...</echo>
+		<phing phingfile="${init.paths.phing}/_deploy.check_syntax.xml" target="check_syntax" />
+        <!-- Minify CSS and JS files -->
 		<echo level="warning">    Minifying JS and CSS files...</echo>
 		<exec command="${init.paths.phing}/minify.py -a --folder ${init.paths.export}/${input.site}/" />
-		<!--verify syntax-->
-		<phing phingfile="${init.paths.phing}/_deploy.check_syntax.xml" target="check_syntax" />
-		<!--zip it up!-->
+		<!-- Create webp files  -->
+        <echo level="warning">   Compressing images to webp ...</echo>
+        <exec command="${init.paths.phing}/webp.sh jpg ${init.paths.export}/${input.site}/" />
+        <exec command="${init.paths.phing}/webp.sh png ${init.paths.export}/${input.site}/" />
+        <exec command="${init.paths.phing}/webp.sh gif ${init.paths.export}/${input.site}/" />
+        <!--zip it up!-->
 		<echo level="info">    Creating target build archive...</echo>
 		<mkdir dir="${init.paths.export}/__buildfiles" />
 		<exec output="/dev/null" command="tar zcf ${buildfile_main} -C ${init.paths.export}/${input.site}/ ." dir="${init.paths.export}/__buildfiles" />
