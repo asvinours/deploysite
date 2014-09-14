@@ -58,9 +58,12 @@
 		<phing phingfile="${init.paths.phing}/_deploy.check_syntax.xml" target="check_syntax" />
 		<echo level="warning">    Minifying JS and CSS files...</echo>
 		<exec command="${init.paths.phing}/minify.py -a --folder ${init.paths.export}/${input.site}/" />
-		<echo level="warning">    Convert jpg and png to webp...</echo>
-		<exec command="find ${init.paths.export} -regex \".*\.\(jpe?g\|png\)\" -exec bash -c 'for x; do x=${x#./}; ${init.paths.phing}/cwebp -mt -m 6 \"$x\" -o \"${x}.webp\"; done' _ {} +;" />
-		<!--zip it up!-->
+		<!-- Create webp files  -->
+        <echo level="warning">   Compressing images to webp ...</echo>
+        <exec command="${init.paths.phing}/webp.sh jpg ${init.paths.export}/${input.site}/" />
+        <exec command="${init.paths.phing}/webp.sh png ${init.paths.export}/${input.site}/" />
+        <exec command="${init.paths.phing}/webp.sh gif ${init.paths.export}/${input.site}/" />
+        <!--zip it up!-->
 		<echo level="info">    Creating target build archive...</echo>
 		<mkdir dir="${init.paths.export}/__buildfiles" />
 		<exec output="/dev/null" command="tar zcf ${buildfile_main} -C ${init.paths.export}/${input.site}/ ." dir="${init.paths.export}/__buildfiles" />
